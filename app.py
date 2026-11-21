@@ -279,7 +279,7 @@ button, .btn {
 .editor-role { background: #1769d2; }
 .tester-role { background: #15965b; }
 
-.file-card, .product-card {
+.login-link { float: right; font-size: 22px; text-decoration: none; padding: 6px 10px; border-radius: 8px; background: #e8f1ff; }\n.file-card, .product-card {
     border: 1px solid #ddd;
     border-radius: 10px;
     padding: 15px;
@@ -361,6 +361,7 @@ th {
 
 {% if page == "files" %}
 
+    <a class="login-link" href="{{ url_for('login') }}" title="Login" aria-label="Login">👤 Login</a>
     <h1>📁 PRODUCT MANAGEMENT</h1>
     <p class="subtitle">Create a new file or open a saved file</p>
 
@@ -393,14 +394,56 @@ th {
             <p>Created by: {{ f.username }}</p>
             <p>Created: {{ f.created_at }}</p>
             <a class="btn green"
-               href="{{ url_for('open_file', file_id=f.id) }}">
-                Open File
+               href="{{ url_for('login', file_name=f.file_name) }}">
+                👤 Login
             </a>
         </div>
     {% else %}
         <p class="empty">No saved files yet.</p>
     {% endfor %}
 
+
+{% elif page == "login" %}
+
+    <div style="text-align:center; margin: 12px 0 22px;">
+        <div style="font-size:54px; line-height:1.2;">👤</div>
+        <h1 style="margin:8px 0;">LOGIN</h1>
+        <p class="subtitle">Sign in to open your saved Product Management file.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('login') }}">
+        <label>File Name</label>
+        <input name="file_name" required maxlength="100"
+               value="{{ file_name }}" placeholder="Enter saved file name">
+
+        <label>Username</label>
+        <input name="username" required maxlength="80"
+               placeholder="Enter username" autocomplete="username">
+
+        <label>Password</label>
+        <input type="password" name="password" required
+               placeholder="Enter password" autocomplete="current-password">
+
+        <button type="submit">👤 Login</button>
+    </form>
+
+    <hr>
+    <h2>First time here? Create a new file</h2>
+    <form method="POST" action="{{ url_for('create_file') }}">
+        <label>New File Name</label>
+        <input name="file_name" required maxlength="100"
+               placeholder="Enter a new file name">
+
+        <label>Username</label>
+        <input name="username" required maxlength="80"
+               placeholder="Create username">
+
+        <label>Password</label>
+        <input type="password" name="password" required minlength="8"
+               placeholder="Create password (at least 8 characters)">
+
+        <button class="green" type="submit">Create File and Login</button>
+    </form>
 
 {% elif page == "open_file" %}
 
@@ -703,21 +746,8 @@ updateQuantityFields();
 
 @app.route("/")
 def file_home():
-    session.clear()
-
-    conn = get_db()
-    files = conn.execute("""
-        SELECT id, file_name, username, created_at
-        FROM saved_files
-        ORDER BY id DESC
-    """).fetchall()
-    conn.close()
-
-    return render_template_string(
-        PAGE,
-        page="files",
-        files=files
-    )
+    # Always ask for login first when the website is opened.
+    return redirect(url_for("login"))
 
 
 # ==================================================
@@ -772,6 +802,42 @@ def create_file():
 
     flash("File created successfully!")
     return redirect(url_for("home"))
+
+
+# ==================================================
+# LOGIN TO A SAVED FILE
+# ==================================================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        file_name = request.form.get("file_name", "").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        conn = get_db()
+        saved_file = conn.execute("""
+            SELECT id, file_name, username, password_hash
+            FROM saved_files
+            WHERE file_name = ? COLLATE NOCASE
+              AND username = ? COLLATE NOCASE
+        """, (file_name, username)).fetchone()
+        conn.close()
+
+        if saved_file and check_password_hash(saved_file["password_hash"], password):
+            session.clear()
+            session["file_id"] = saved_file["id"]
+            session["role"] = None
+            flash("Login successful!")
+            return redirect(url_for("home"))
+
+        flash("Incorrect file name, username or password.")
+
+    return render_template_string(
+        PAGE,
+        page="login",
+        file_name=request.args.get("file_name", "").strip()
+    )
 
 
 # ==================================================
@@ -1123,6 +1189,7 @@ def not_found(error):
 # ==================================================
 # RUN APPLICATION
 # ==================================================
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
